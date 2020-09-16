@@ -3,20 +3,17 @@
 namespace App\Components;
 
 use App\Exceptions\ErrorTranslator;
+use App\Models\Word;
+use Zanzara\Context;
 
 class Translator
 {
     const BASE_URL = 'https://dictionary.skyeng.ru/api/public/v1/words/search';
-    protected array $params =[];
 
-    public function __construct($word)
+    protected static function getTranslate($word)
     {
-        $this->params['search'] = $word;
-    }
-
-    protected function getResponse()
-    {
-        $url = self::BASE_URL . '?' . http_build_query($this->params);
+        $params['search'] = $word;
+        $url = self::BASE_URL . '?' . http_build_query($params);
 
         $response = json_decode(
             file_get_contents($url),
@@ -29,24 +26,16 @@ class Translator
         return $response[0];
     }
 
-    public function engRusTranslator()
+    public static function engRusTranslator(string $enteredWord)
     {
-        try {
-            $data = $this->getResponse();
-        } catch (ErrorTranslator $e) {
-            return $message = $e->getMessage();
-        }
-        return $translation = $data['meanings'][0]['translation']['text'];
-    }
+        $res = self::getTranslate($enteredWord);
 
-    public function rusEngTranslator()
-    {
-        try {
-            $data = $this->getResponse();
-        } catch (ErrorTranslator $e) {
-            return $message = $e->getMessage();
-        }
-        return $translation = $data['text'];
-    }
+        $word = new Word();
+        $word->rus_word = $res['meanings'][0]['translation']['text'];
+        $word->eng_word = $res['text'];
+        $word->imageUrl = $res['meanings'][0]['imageUrl'];
+        $word->soundUrl = $res['meanings'][0]['soundUrl'];
 
+        return $word;
+    }
 }
