@@ -2,6 +2,8 @@
 
 use Zanzara\Context;
 use Zanzara\Zanzara;
+use App\Components\Translator;
+use App\Components\RandomWord;
 
 require __DIR__ . '/vendor/autoload.php';
 $token = require __DIR__ . '/config/token.php';
@@ -12,7 +14,7 @@ $bot->onCommand('start', function (Context $ctx) {
     $kb = ['reply_markup' =>
         ['keyboard' => [[
             ['text' => 'Переводчик'],
-            ['text' => 'Добавить слова'],
+            ['text' => 'Добавить слово'],
             ['text' => 'Изучить слова'],
         ]], 'resize_keyboard' => true]
     ];
@@ -21,71 +23,90 @@ $bot->onCommand('start', function (Context $ctx) {
     $ctx->sendMessage( $firstName . ', ' . $welcomeText, $kb);
 });
 
-// ответ на команды Меню
+
+// Переводчик
 $bot->onText('Переводчик', function (Context $ctx) {
-    $kb = ['reply_markup' =>
-        ['inline_keyboard' => [[
-            ['callback_data' => 'eng-rus', 'text' => 'eng-rus'],
-            ['callback_data' => 'rus-eng', 'text' => 'rus-eng'],
-        ]], 'resize_keyboard' => true]
-    ];
-    $ctx->sendMessage('Выберете режим перевода', $kb);
-});
-$bot->onText('Добавить слова', function (Context $ctx) {
-    $kb = ['reply_markup' =>
-        ['inline_keyboard' => [[
-            ['callback_data' => 'eng', 'text' => 'eng'],
-            ['callback_data' => 'rus', 'text' => 'rus'],
-        ]], 'resize_keyboard' => true]
-    ];
-    $ctx->sendMessage('Выберете, на каком языке вы хотите добавить слово в словарь', $kb);
-});
-$bot->onText('Изучить слова', function (Context $ctx) {
-    $ctx->sendMessage('Раздел в данный момент находится в разработке');
-});
-
-// Выбор режима переводчика
-$bot->onCbQueryData(['eng-rus'], function (Context $ctx) {
-    $ctx->sendMessage('Перевод с английского на русский. Введите слово:');
+    $ctx->sendMessage('Введите слово, которое хотите перевести:');
     $ctx->nextStep('Translator');
 });
-$bot->onCbQueryData(['rus-eng'], function (Context $ctx) {
-    $ctx->sendMessage('Перевод с русского на английский. Введите слово:');
-    $ctx->nextStep('Translator');
-});
-
-// Выбор добавления слов в словарь
-$bot->onCbQueryData(['rus'], function (Context $ctx) {
-    $ctx->sendMessage('Введите слово которое хотите добавить в свой словарь');
-    $ctx->nextStep('addNewRusWord');
-});
-$bot->onCbQueryData(['eng'], function (Context $ctx) {
-    $ctx->sendMessage('Введите слово которое хотите добавить в свой словарь');
-    $ctx->nextStep('addNewEngWord');
-});
-
-// Функции добавления слов в словарь
-function addNewRusWord(Context $ctx)
-{
-    $word = $ctx->getMessage()->getText();
-    $translateWord = \App\Components\Translator::rusEngTranslator($word);
-    $user = $ctx->getEffectiveUser();
-
-}
-function addNewEngWord(Context $ctx)
-{
-    $word = new \App\Models\Word($ctx);
-    $word->save();
-}
-
-
-
-// Функция переводчик
 function Translator(Context $ctx)
 {
     $enteredWord = $ctx->getMessage()->getText();
-    $word = \App\Components\Translator::engRusTranslator($enteredWord);
-    $ctx->sendMessage($word->eng_word . ' - ' . $word->rus_word);
+    try {
+        $word = Translator::engRusTranslator($enteredWord);
+        $message = $word->eng_word . ' - ' . $word->rus_word;
+        $ctx->sendMessage($message);
+    } catch (Exception $errorTranslator) {
+        $ctx->sendMessage($errorTranslator->getMessage());
+    }
 }
+
+// Добавить слово в словарь
+$bot->onText('Добавить слово', function (Context $ctx) {
+    $ctx->sendMessage('Введите слово, которое хотите добавить в словарь:');
+    $ctx->nextStep('addNewWord');
+});
+function addNewWord(Context $ctx)
+{
+    $enteredWord = $ctx->getMessage()->getText();
+    try {
+        $word = Translator::engRusTranslator($enteredWord);
+        $word->user_id = $ctx->getEffectiveUser()->getId();
+
+        if ($word->saveNewWord()) {
+            $message = 'Слово \'' . $word->rus_word . '\'-\'' .
+                $word->eng_word . '\' добавлен в словарь для заучивания';
+            $ctx->sendMessage($message);
+        }
+    } catch (Exception $e) {
+        $ctx->sendMessage($e->getMessage());
+    }
+}
+
+// Изучение слов
+$bot->onText('Изучить слова', function (Context $ctx) {
+    $kb = ['reply_markup' =>
+        ['inline_keyboard' => [[
+            ['callback_data' => 'next', 'text' => 'Я знаю! Следующее!'],
+            ['callback_data' => 'translate', 'text' => 'Я не знаю! Перевод!'],
+        ]], 'resize_keyboard' => true],
+    ];
+    $userId = $ctx->getEffectiveUser()->getId();
+    try {
+        $randomWord = RandomWord::randomWord($userId);
+        $ctx->setChatData('word', $randomWord, );
+        $ctx->sendMessage($randomWord->eng_word, $kb);
+    } catch (Exception $e) {
+        $ctx->sendMessage($e->getMessage());
+    }
+});
+$bot->onCbQueryData(['translate'], function (Context $ctx) {
+    $ctx->getChatDataItem('word')->then(function ($word) use ($ctx) {
+        $message = $word->eng_word . ' - ' . $word->rus_word;
+        $kb = ['reply_markup' =>
+            ['inline_keyboard' => [[
+                ['callback_data' => 'next', 'text' => 'Следующее слово!'],
+            ]], 'resize_keyboard' => true],
+        ];
+        $ctx->sendMessage($message, $kb);
+    });
+    $ctx->deleteChatDataItem('word');
+});
+$bot->onCbQueryData(['next'], function (Context $ctx) {
+    $kb = ['reply_markup' =>
+        ['inline_keyboard' => [[
+            ['callback_data' => 'next', 'text' => 'Я знаю! Следующее!'],
+            ['callback_data' => 'translate', 'text' => 'Я не знаю! Перевод!'],
+        ]], 'resize_keyboard' => true],
+    ];
+    $userId = $ctx->getEffectiveUser()->getId();
+    try {
+        $randomWord = RandomWord::randomWord($userId);
+        $ctx->setChatData('word', $randomWord, );
+        $ctx->sendMessage($randomWord->eng_word, $kb);
+    } catch (Exception $e) {
+        $ctx->sendMessage($e->getMessage());
+    }
+});
 
 $bot->run();
