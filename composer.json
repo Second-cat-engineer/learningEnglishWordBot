@@ -1,8 +1,6 @@
 {
     "require": {
-        "badfarm/zanzara": "^0.3.1",
-        "illuminate/database": "*",
-        "illuminate/events": "*"
+        "badfarm/zanzara": "^0.3.1"
     },
     "autoload": {
         "psr-4": {
