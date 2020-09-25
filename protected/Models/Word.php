@@ -23,7 +23,7 @@ class Word extends Model
 
         $db = Db::instance();
         $sql = 'SELECT * FROM ' . static::TABLE .
-            ' WHERE user_id=:user_id AND eng_word=:eng_word OR rus_word=:rus_word';
+            ' WHERE user_id=:user_id AND eng_word=:eng_word AND rus_word=:rus_word';
         $res = $db->query($sql, static::class, $parameters);
         if (empty($res)) {
             return false;
